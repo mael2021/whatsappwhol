@@ -1,6 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import axios from 'axios';
-import { decrypt } from '../../lib/encryption';
 
 // Esta URL debería apuntar a tu proyecto principal
 const MAIN_PROJECT_URL = 'https://tu-proyecto-principal.com/api/process-whatsapp-message';

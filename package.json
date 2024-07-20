@@ -7,15 +7,14 @@
     "start": "next start"
   },
   "dependencies": {
-    "@prisma/client": "^5.17.0",
-    "axios": "^1.7.2",
     "next": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "axios": "^1.7.2"
   },
   "devDependencies": {
-    "@types/node": "latest",
     "@types/react": "latest",
+    "@types/node": "latest",
     "typescript": "latest"
   }
 }
