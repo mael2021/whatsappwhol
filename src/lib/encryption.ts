@@ -1,3 +1,4 @@
+//encryotion.ts
 import crypto from 'crypto';
 
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
