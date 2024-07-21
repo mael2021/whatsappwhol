@@ -1,75 +1,92 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import axios from 'axios';
 
+// URL de tu proyecto principal (ajusta esto según tu configuración)
 const MAIN_PROJECT_URL = 'https://tu-proyecto-principal.com/api/process-whatsapp-message';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     console.log('Webhook called. Method:', req.method);
-    console.log('Request headers:', JSON.stringify(req.headers, null, 2));
-    console.log('Request query:', JSON.stringify(req.query, null, 2));
     console.log('Request body:', JSON.stringify(req.body, null, 2));
 
     if (req.method === 'GET') {
-        const mode = req.query['hub.mode'];
-        const token = req.query['hub.verify_token'];
-        const challenge = req.query['hub.challenge'];
-
-        console.log('Verification attempt:');
-        console.log('Mode:', mode);
-        console.log('Token received:', token);
-        console.log('Expected token:', process.env.WHATSAPP_VERIFY_TOKEN);
-        console.log('Challenge:', challenge);
-
-        if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
-            console.log('Webhook verified successfully');
-            return res.status(200).send(challenge);
-        } else {
-            console.log('Webhook verification failed');
-            if (mode !== 'subscribe') console.log('Incorrect mode');
-            if (token !== process.env.WHATSAPP_VERIFY_TOKEN) console.log('Token mismatch');
-            return res.status(403).json({ error: 'Verification failed' });
-        }
+        return handleVerification(req, res);
     } else if (req.method === 'POST') {
-        console.log('Processing POST request');
-        const incomingMsg = req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body || '';
-        const fromNumber = req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from;
-
-        console.log('Incoming message:', incomingMsg);
-        console.log('From number:', fromNumber);
-
-        try {
-            console.log('Sending data to main project:', MAIN_PROJECT_URL);
-            const response = await axios.post(MAIN_PROJECT_URL, {
-                message: incomingMsg,
-                from: fromNumber
-            });
-
-            console.log('Response from main project:', response.data);
-
-            const { answer, phoneNumberId, accessToken } = response.data;
-
-            console.log('Sending WhatsApp message');
-            await sendWhatsAppMessage(phoneNumberId, accessToken, fromNumber, answer);
-
-            console.log('WhatsApp message sent successfully');
-            return res.status(200).json({ success: true });
-        } catch (error) {
-            console.error('Error processing webhook:', error);
-            return res.status(500).json({ error: 'Internal server error' });
-        }
+        return handleWebhookEvent(req, res);
     } else {
-        console.log('Method not allowed:', req.method);
         res.setHeader('Allow', ['GET', 'POST']);
         return res.status(405).end(`Method ${req.method} Not Allowed`);
     }
 }
 
-async function sendWhatsAppMessage(phoneNumberId: string, accessToken: string, to: string, message: string) {
-    console.log('Sending WhatsApp message:');
-    console.log('Phone Number ID:', phoneNumberId);
-    console.log('To:', to);
-    console.log('Message:', message);
+function handleVerification(req: NextApiRequest, res: NextApiResponse) {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
 
+    console.log('Verification attempt:');
+    console.log('Mode:', mode);
+    console.log('Token:', token);
+    console.log('Challenge:', challenge);
+
+    if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
+        console.log('Webhook verified successfully');
+        return res.status(200).send(challenge);
+    } else {
+        console.log('Webhook verification failed');
+        return res.status(403).json({ error: 'Verification failed' });
+    }
+}
+
+async function handleWebhookEvent(req: NextApiRequest, res: NextApiResponse) {
+    const body = req.body;
+
+    if (body.object === 'whatsapp_business_account') {
+        for (const entry of body.entry) {
+            for (const change of entry.changes) {
+                const value = change.value;
+
+                if (value.messages && value.messages.length > 0) {
+                    await handleIncomingMessage(value.messages[0], value.metadata);
+                }
+
+                if (value.statuses && value.statuses.length > 0) {
+                    handleMessageStatus(value.statuses[0], value.metadata);
+                }
+            }
+        }
+
+        return res.status(200).json({ success: true });
+    }
+
+    return res.status(404).json({ error: 'Not found' });
+}
+
+async function handleIncomingMessage(message: any, metadata: any) {
+    console.log('Received message:', message);
+    try {
+        const response = await axios.post(MAIN_PROJECT_URL, {
+            type: 'incoming_message',
+            message: message,
+            metadata: metadata
+        });
+        console.log('Main project response:', response.data);
+
+        // Aquí puedes agregar lógica para enviar una respuesta automática si es necesario
+        // Por ejemplo:
+        // await sendWhatsAppMessage(metadata.phone_number_id, message.from, "Gracias por tu mensaje. Te responderemos pronto.");
+
+    } catch (error) {
+        console.error('Error processing incoming message:', error);
+    }
+}
+
+function handleMessageStatus(status: any, metadata: any) {
+    console.log('Message status update:', status);
+    // Aquí puedes agregar lógica para manejar actualizaciones de estado de mensajes
+    // Por ejemplo, actualizar el estado del mensaje en tu base de datos
+}
+
+async function sendWhatsAppMessage(phoneNumberId: string, to: string, message: string) {
     try {
         const response = await axios.post(
             `https://graph.facebook.com/v12.0/${phoneNumberId}/messages`,
@@ -81,14 +98,18 @@ async function sendWhatsAppMessage(phoneNumberId: string, accessToken: string, t
             },
             {
                 headers: {
-                    'Authorization': `Bearer ${accessToken}`,
+                    'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
                     'Content-Type': 'application/json'
                 }
             }
         );
-        console.log('WhatsApp API response:', response.data);
+        console.log('Message sent successfully:', response.data);
     } catch (error) {
         console.error('Error sending WhatsApp message:', error);
-        throw error;
     }
 }
+
+// Log environment variables (be careful not to log sensitive information)
+console.log('Webhook handler initialized');
+console.log('WHATSAPP_VERIFY_TOKEN set:', !!process.env.WHATSAPP_VERIFY_TOKEN);
+console.log('WHATSAPP_ACCESS_TOKEN set:', !!process.env.WHATSAPP_ACCESS_TOKEN);
